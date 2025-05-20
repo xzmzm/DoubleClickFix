@@ -65,7 +65,6 @@ jobs:
         echo "final_tag_name=$finalTag"        >> $env:GITHUB_OUTPUT
         echo "create_new_git_tag=$createNewTag" >> $env:GITHUB_OUTPUT
         echo "is_prerelease=$isPrerelease"     >> $env:GITHUB_OUTPUT
-      shell: pwsh
 
     - name: Build C++ Project
       run: msbuild SimpleDoubleClickFix\SimpleDoubleClickFix.vcxproj /p:Configuration=Release /p:Platform=x64
