@@ -7,7 +7,7 @@ on:
   workflow_dispatch: # Allows manual triggering
 
 permissions:
-  contents: write # Required to create releases and upload assets
+  contents: write # Required to create releases, upload assets, and push tags
 
 jobs:
   build:
@@ -16,11 +16,53 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      # // ...
+      # // ... (e.g., with: { fetch-depth: 0 } if full history is needed for other reasons)
 
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
       # // ...
+
+    - name: Get current date for Release Name
+      id: release_date
+      run: echo "formatted_date=$(Get-Date -Format 'yyyy-MM-dd')" >> $env:GITHUB_OUTPUT
+      shell: pwsh
+
+    - name: Determine Release Tag and Properties
+      id: release_props
+      run: |
+        $final_tag_name = "${{ github.ref_name }}"
+        $create_new_git_tag_bool = "false"
+        # Default prerelease status: true if ref contains '-', assumes it's a pre-release tag like v1.0.0-beta
+        $is_prerelease_bool = "${{ contains(github.ref_name, '-') }}"
+
+        if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+          # For manual dispatch, if it's on a branch (not a v* tag), create a new date-based dev tag.
+          if (-not ("${{ startsWith(github.ref_name, 'v') }}")) {
+            $timestamp_for_tag = Get-Date -Format 'yyyyMMdd-HHmmss'
+            $final_tag_name = "dev-$timestamp_for_tag"
+            $create_new_git_tag_bool = "true"
+            $is_prerelease_bool = "true" # All auto-created dev tags are considered prereleases
+            Write-Host "Workflow dispatch on non-v* ref ('${{ github.ref_name }}'). Will create and use new tag: $final_tag_name"
+          } else {
+            # Workflow dispatch on an existing v* tag. Use that tag.
+            # $is_prerelease_bool is already set based on whether github.ref_name (the v* tag) contains '-'
+            Write-Host "Workflow dispatch on v* tag ('${{ github.ref_name }}'). Using existing tag."
+          }
+        } elseif ("${{ github.event_name }}" -eq "push" -and "${{ startsWith(github.ref_name, 'v') }}") {
+          # Push event for a v* tag. Use that tag.
+          # $is_prerelease_bool is already set based on whether github.ref_name (the v* tag) contains '-'
+          Write-Host "Push event for v* tag ('${{ github.ref_name }}'). Using existing tag."
+        } else {
+          # Fallback for unexpected scenarios, though 'on' trigger should prevent this.
+          Write-Host "Warning: Unexpected event/ref combination: ${{ github.event_name }} / ${{ github.ref_name }}."
+          Write-Host "Defaulting to use '${{ github.ref_name }}' as tag name and not creating a new git tag."
+          # $is_prerelease_bool remains based on contains(github.ref_name, '-')
+        }
+
+        echo "final_tag_name=$final_tag_name" >> $env:GITHUB_OUTPUT
+        echo "create_new_git_tag=$create_new_git_tag_bool" >> $env:GITHUB_OUTPUT
+        echo "is_prerelease=$is_prerelease_bool" >> $env:GITHUB_OUTPUT
+      shell: pwsh
 
     - name: Build C++ Project
       run: msbuild SimpleDoubleClickFix\SimpleDoubleClickFix.vcxproj /p:Configuration=Release /p:Platform=x64
@@ -39,13 +81,19 @@ jobs:
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: SimpleDoubleClickFix-${{ github.ref_name }} # Artifact name, e.g., SimpleDoubleClickFix-v1.0.0 or SimpleDoubleClickFix-master
-        path: ./SimpleDoubleClickFix.zip # Path to the file to upload
-        retention-days: 7 # Optional: how long to keep the artifact (max 90 for public, custom for private/enterprise)
+        name: SimpleDoubleClickFix-${{ steps.release_props.outputs.final_tag_name }} # Artifact name uses determined tag
+        path: ./SimpleDoubleClickFix.zip
+        retention-days: 7
 
-    - name: Get current date
-      id: date
-      run: echo "date=$(Get-Date -Format 'yyyy-MM-dd')" >> $env:GITHUB_OUTPUT
+    - name: Create and Push Git Tag (if new)
+      if: steps.release_props.outputs.create_new_git_tag == 'true'
+      run: |
+        $new_tag = "${{ steps.release_props.outputs.final_tag_name }}"
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        Write-Host "Creating and pushing new git tag: $new_tag for commit ${{ github.sha }}"
+        git tag $new_tag "${{ github.sha }}"
+        git push origin $new_tag
       shell: pwsh
 
     - name: Create GitHub Release
@@ -54,9 +102,8 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        # // ...
-        tag_name: ${{ github.ref_name }}
-        release_name: Release ${{ github.ref_name }} (${{ steps.date.outputs.date }})
+        tag_name: ${{ steps.release_props.outputs.final_tag_name }}
+        release_name: Release ${{ steps.release_props.outputs.final_tag_name }} (${{ steps.release_date.outputs.formatted_date }})
         body: |
           Release notes for SimpleDoubleClickFix.
 
@@ -69,18 +116,14 @@ jobs:
           It may require the Microsoft Visual C++ Redistributable for Visual Studio 2015-2022.
           If needed, you can usually download it from Microsoft's official website.
         draft: false
-        prerelease: false # You can make this dynamic, e.g., based on whether the tag is a pre-release (contains '-')
-                         # or if triggered by workflow_dispatch on a non-version branch:
-                         # prerelease: ${{ (github.event_name == 'workflow_dispatch' && !startsWith(github.ref_name, 'v')) || contains(github.ref_name, '-') }}
-
+        prerelease: ${{ steps.release_props.outputs.is_prerelease == 'true' }}
 
     - name: Upload Release Asset
-      # // ...
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: ./SimpleDoubleClickFix.zip
-        asset_name: SimpleDoubleClickFix.zip
+        asset_name: SimpleDoubleClickFix.zip # This is the filename in the release assets.
         asset_content_type: application/zip
