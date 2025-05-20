@@ -41,7 +41,7 @@ jobs:
         $createNewTag   = $false
         $isPrerelease   = $refName.Contains('-')  # any tag with "-" ⇒ prerelease
 
-        if (${{ github.event_name }} -eq 'workflow_dispatch') {
+        if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
           if (-not $isTag) {
             # manual dispatch on a branch ⇒ create a dev-timestamp tag
             $timestamp     = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -54,11 +54,12 @@ jobs:
             Write-Host "Manual dispatch on tag $refName. Using existing tag."
           }
         }
-        elseif (${{ github.event_name }} -eq 'push' -and $isTag) {
+        elseif ('${{ github.event_name }}' -eq 'push' -and $isTag) {
           Write-Host "Push of tag $refName. Using that tag."
         }
         else {
-          Write-Host "Event ${{ github.event_name }} on $ref. Using tag $finalTag."
+          # This line is fine as is, as ${{ github.event_name }} is within a PowerShell double-quoted string
+          Write-Host "Event ${{ github.event_name }} on $ref. Not a tag push or manual dispatch. Using tag $finalTag."
         }
 
         # export for later steps
