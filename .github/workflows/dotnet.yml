@@ -1,71 +1,62 @@
-name: Build and Release SimpleDoubleClickFix (C++)
+name: Build and Release
 
 on:
   push:
     tags:
       - 'v*' # Trigger on version tags (e.g., v1.0.0)
-  workflow_dispatch: # Allows manual triggering
+  workflow_dispatch:
 
 permissions:
-  contents: write # Required to create releases and upload assets
-
+  contents: write
+  
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 9.0.x
+    - name: Restore dependencies
+      run: dotnet restore
+    - name: Build
+      run: dotnet build DoubleClickFix/DoubleClickFix.csproj --no-restore --configuration Release --property:SkipWapProjects=true
+      shell: pwsh
 
-    - name: Setup MSBuild
-      uses: microsoft/setup-msbuild@v2
-      # This action sets up the MSBuild environment, necessary for building .vcxproj files.
-      # It will use the version of MSBuild included with Visual Studio on the runner.
-
-    - name: Build C++ Project
-      run: msbuild SimpleDoubleClickFix\SimpleDoubleClickFix.vcxproj /p:Configuration=Release /p:Platform=x64
-      shell: pwsh # Using PowerShell, which is the default on windows-latest
-
-    - name: Stage Binaries
+    - name: Package binaries
       run: |
-        mkdir staging
-        Copy-Item -Path SimpleDoubleClickFix\x64\Release\SimpleDoubleClickFix.exe -Destination staging\
+        mkdir Release
+        Copy-Item -Path DoubleClickFix/bin/Release/net9.0-windows10.0.17763.0/* -Destination Release/ -Recurse        
       shell: pwsh
 
-    - name: Create ZIP Archive
-      # This step packages the contents of the 'staging' directory into a zip file.
-      # For this project, it will contain SimpleDoubleClickFix.exe.
-      run: Compress-Archive -Path staging\* -DestinationPath SimpleDoubleClickFix.zip
+    - name: Create ZIP file
+      run: Compress-Archive -Path Release/* -DestinationPath DoubleClickFix.zip
       shell: pwsh
 
-    - name: Create GitHub Release
+    - name: Create Release
       id: create_release
       uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.ref_name }} # github.ref_name provides a cleaner tag name (e.g., v1.0.0)
+        release_name: Release ${{ github.ref }}
         body: |
-          Release notes for SimpleDoubleClickFix.
-
-          Download the `SimpleDoubleClickFix.zip` file, extract it, and launch `SimpleDoubleClickFix.exe`.
-          This will open a console window; the fix is active as long as this window remains open.
-          The program prints active thresholds (e.g., for Left Mouse Button) to the console on startup.
-          To stop the program, close the console window or press Ctrl+C in it.
-
-          Windows only. This is a native C++ application and does not require a .NET runtime.
-          It may require the Microsoft Visual C++ Redistributable for Visual Studio 2015-2022.
-          If needed, you can usually download it from Microsoft's official website.
+          Release notes
+          Download the binaries, extract the DoubleClickFix.zip file and launch DoubleClickFix.exe.
+          This will launch a Windows tray icon. Double-click it to open the UI and fine-tune the settings.
+          Windows only. Requires .NET 9 run-time.
         draft: false
         prerelease: false
 
-    - name: Upload Release Asset
+    - name: Upload release assets
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./SimpleDoubleClickFix.zip # Path to the zip file created in the previous step
-        asset_name: SimpleDoubleClickFix.zip # Name of the asset as it will appear in the GitHub Release
+        asset_path: ./DoubleClickFix.zip
+        asset_name: DoubleClickFix.zip
         asset_content_type: application/zip
