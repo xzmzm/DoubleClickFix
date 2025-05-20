@@ -47,7 +47,7 @@ jobs:
             $timestamp     = Get-Date -Format 'yyyyMMdd-HHmmss'
             $finalTag       = "dev-$timestamp"
             $createNewTag   = $true
-            $isPrerelease   = $true            # dev-* always prerelease
+            $isPrerelease   = $false
             Write-Host "Manual dispatch on branch. Will create tag: $finalTag"
           }
           else {
