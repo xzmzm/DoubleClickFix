@@ -16,12 +16,11 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      # fetch-depth: 1 (default) is usually fine. If full history is needed for versioning, set to 0.
+      # // ...
 
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
-      # This action sets up the MSBuild environment.
-      # msbuild-architecture defaults to x64 on x64 runners, which is suitable for Platform=x64.
+      # // ...
 
     - name: Build C++ Project
       run: msbuild SimpleDoubleClickFix\SimpleDoubleClickFix.vcxproj /p:Configuration=Release /p:Platform=x64
@@ -44,17 +43,20 @@ jobs:
         path: ./SimpleDoubleClickFix.zip # Path to the file to upload
         retention-days: 7 # Optional: how long to keep the artifact (max 90 for public, custom for private/enterprise)
 
+    - name: Get current date
+      id: date
+      run: echo "date=$(Get-Date -Format 'yyyy-MM-dd')" >> $env:GITHUB_OUTPUT
+      shell: pwsh
+
     - name: Create GitHub Release
       id: create_release
       uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        # Corrected: Use github.ref_name for the tag_name.
-        # For a tag push like 'refs/tags/v1.2.3', github.ref_name is 'v1.2.3'.
-        # For a workflow_dispatch on 'master' branch, github.ref_name is 'master'.
+        # // ...
         tag_name: ${{ github.ref_name }}
-        release_name: Release ${{ github.ref_name }}
+        release_name: Release ${{ github.ref_name }} (${{ steps.date.outputs.date }})
         body: |
           Release notes for SimpleDoubleClickFix.
 
@@ -73,7 +75,7 @@ jobs:
 
 
     - name: Upload Release Asset
-      # This step uploads the ZIP file to the GitHub Release created above.
+      # // ...
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
