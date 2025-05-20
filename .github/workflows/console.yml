@@ -29,39 +29,42 @@ jobs:
 
     - name: Determine Release Tag and Properties
       id: release_props
+      shell: pwsh
       run: |
-        $final_tag_name = "${{ github.ref_name }}"
-        $create_new_git_tag_bool = "false"
-        # Default prerelease status: true if ref contains '-', assumes it's a pre-release tag like v1.0.0-beta
-        $is_prerelease_bool = "${{ contains(github.ref_name, '-') }}"
+        # read the raw ref
+        $ref = $env:GITHUB_REF                # e.g. "refs/heads/master" or "refs/tags/v1.0.0"
+        $refName = $ref.Split('/')[-1]        # e.g. "master" or "v1.0.0"
+        $isTag    = $ref.StartsWith('refs/tags/')
+        $isBranch = $ref.StartsWith('refs/heads/')
 
-        if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-          # For manual dispatch, if it's on a branch (not a v* tag), create a new date-based dev tag.
-          if (-not ("${{ startsWith(github.ref_name, 'v') }}")) {
-            $timestamp_for_tag = Get-Date -Format 'yyyyMMdd-HHmmss'
-            $final_tag_name = "dev-$timestamp_for_tag"
-            $create_new_git_tag_bool = "true"
-            $is_prerelease_bool = "true" # All auto-created dev tags are considered prereleases
-            Write-Host "Workflow dispatch on non-v* ref ('${{ github.ref_name }}'). Will create and use new tag: $final_tag_name"
-          } else {
-            # Workflow dispatch on an existing v* tag. Use that tag.
-            # $is_prerelease_bool is already set based on whether github.ref_name (the v* tag) contains '-'
-            Write-Host "Workflow dispatch on v* tag ('${{ github.ref_name }}'). Using existing tag."
+        $finalTag       = $refName
+        $createNewTag   = $false
+        $isPrerelease   = $refName.Contains('-')  # any tag with "-" ⇒ prerelease
+
+        if (${{ github.event_name }} -eq 'workflow_dispatch') {
+          if (-not $isTag) {
+            # manual dispatch on a branch ⇒ create a dev-timestamp tag
+            $timestamp     = Get-Date -Format 'yyyyMMdd-HHmmss'
+            $finalTag       = "dev-$timestamp"
+            $createNewTag   = $true
+            $isPrerelease   = $true            # dev-* always prerelease
+            Write-Host "Manual dispatch on branch. Will create tag: $finalTag"
           }
-        } elseif ("${{ github.event_name }}" -eq "push" -and "${{ startsWith(github.ref_name, 'v') }}") {
-          # Push event for a v* tag. Use that tag.
-          # $is_prerelease_bool is already set based on whether github.ref_name (the v* tag) contains '-'
-          Write-Host "Push event for v* tag ('${{ github.ref_name }}'). Using existing tag."
-        } else {
-          # Fallback for unexpected scenarios, though 'on' trigger should prevent this.
-          Write-Host "Warning: Unexpected event/ref combination: ${{ github.event_name }} / ${{ github.ref_name }}."
-          Write-Host "Defaulting to use '${{ github.ref_name }}' as tag name and not creating a new git tag."
-          # $is_prerelease_bool remains based on contains(github.ref_name, '-')
+          else {
+            Write-Host "Manual dispatch on tag $refName. Using existing tag."
+          }
+        }
+        elseif (${{ github.event_name }} -eq 'push' -and $isTag) {
+          Write-Host "Push of tag $refName. Using that tag."
+        }
+        else {
+          Write-Host "Event ${{ github.event_name }} on $ref. Using tag $finalTag."
         }
 
-        echo "final_tag_name=$final_tag_name" >> $env:GITHUB_OUTPUT
-        echo "create_new_git_tag=$create_new_git_tag_bool" >> $env:GITHUB_OUTPUT
-        echo "is_prerelease=$is_prerelease_bool" >> $env:GITHUB_OUTPUT
+        # export for later steps
+        echo "final_tag_name=$finalTag"        >> $env:GITHUB_OUTPUT
+        echo "create_new_git_tag=$createNewTag" >> $env:GITHUB_OUTPUT
+        echo "is_prerelease=$isPrerelease"     >> $env:GITHUB_OUTPUT
       shell: pwsh
 
     - name: Build C++ Project
