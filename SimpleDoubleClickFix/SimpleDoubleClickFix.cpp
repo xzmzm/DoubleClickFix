@@ -22,11 +22,30 @@ const int MIDDLE_THRESHOLD = -1;  // ms, disabled by default
 const int X1_THRESHOLD = -1;      // ms, disabled by default
 const int X2_THRESHOLD = -1;      // ms, disabled by default
 
+// Global variables for precise time
+LARGE_INTEGER g_qpcFrequency;
+BOOL g_qpcIsAvailable = FALSE;
+
+// Helper function to get current time in milliseconds with highest precision available
+DWORD GetCurrentPreciseTimeMs() {
+    if (g_qpcIsAvailable) {
+        LARGE_INTEGER qpcTime;
+        QueryPerformanceCounter(&qpcTime);
+        // Calculate milliseconds. Intermediate product qpcTime.QuadPart * 1000 fits in LONGLONG for ~29 years of continuous uptime.
+        // The final result is cast to DWORD, accepting a ~49.7 day rollover for the millisecond counter.
+        // This maintains consistency with GetTickCount() and the original pMouseStruct->time behavior.
+        ULONGLONG milliseconds = (qpcTime.QuadPart * 1000) / g_qpcFrequency.QuadPart;
+        return (DWORD)milliseconds;
+    } else {
+        return GetTickCount(); // Fallback if QPC is not available
+    }
+}
+
 // LowLevelMouseProc callback function
 LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode == HC_ACTION) {
         MSLLHOOKSTRUCT* pMouseStruct = (MSLLHOOKSTRUCT*)lParam;
-        DWORD currentTime = pMouseStruct->time;
+        DWORD currentTime = GetCurrentPreciseTimeMs(); // Use more precise time
         bool suppressEvent = false;
 
         switch (wParam) {
@@ -146,6 +165,15 @@ BOOL WINAPI ConsoleHandlerRoutine(DWORD dwCtrlType) {
 int main() {
     std::cout << "Simple Double-Click Fix Program" << std::endl;
     std::cout << "---------------------------------" << std::endl;
+
+    // Initialize high-resolution timer capabilities
+    g_qpcIsAvailable = QueryPerformanceFrequency(&g_qpcFrequency);
+    if (g_qpcIsAvailable) {
+        std::cout << "High-resolution performance counter is available. Using precise timing." << std::endl;
+    } else {
+        std::cout << "Warning: High-resolution performance counter not available. Falling back to GetTickCount() for timing (lower precision)." << std::endl;
+    }
+
     if (LEFT_THRESHOLD >= 0)
         std::cout << "Fix is ACTIVE for Left Mouse Button (Threshold: " << LEFT_THRESHOLD << "ms)." << std::endl;
     if (RIGHT_THRESHOLD >= 0)
@@ -168,8 +196,6 @@ int main() {
     }
 
     // Install the low-level mouse hook
-    // WH_MOUSE_LL must be processed in the thread that installed the hook.
-    // The hook procedure can be in a DLL and can be called by different threads.
     g_hMouseHook = SetWindowsHookEx(WH_MOUSE_LL, LowLevelMouseProc, GetModuleHandle(NULL), 0);
     if (g_hMouseHook == NULL) {
         std::cerr << "Error: Failed to install mouse hook. GetLastError = " << GetLastError() << std::endl;
@@ -179,15 +205,13 @@ int main() {
     std::cout << "Mouse hook installed successfully. Monitoring mouse events..." << std::endl;
 
     // Message loop to keep the hook alive and process messages for this thread.
-    // This is necessary for WH_MOUSE_LL hooks.
     MSG msg;
-    while (GetMessage(&msg, NULL, 0, 0) > 0) { // GetMessage returns >0 for messages other than WM_QUIT
+    while (GetMessage(&msg, NULL, 0, 0) > 0) { 
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
 
     // Cleanup: Unhook if not already done by ConsoleHandlerRoutine
-    // This part is reached when GetMessage returns 0 (WM_QUIT) or -1 (error).
     if (g_hMouseHook != NULL) {
         UnhookWindowsHookEx(g_hMouseHook);
         std::cout << "Mouse hook uninstalled (fallback cleanup)." << std::endl;
