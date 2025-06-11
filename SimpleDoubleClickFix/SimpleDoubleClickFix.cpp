@@ -14,6 +14,13 @@ DWORD g_dwLastMiddleButtonUpTime = 0;
 DWORD g_dwLastX1ButtonUpTime = 0;
 DWORD g_dwLastX2ButtonUpTime = 0;
 
+// Flags to track suppression state to swallow the matching 'up' event
+bool g_bLeftDownSuppressed = false;
+bool g_bRightDownSuppressed = false;
+bool g_bMiddleDownSuppressed = false;
+bool g_bX1DownSuppressed = false;
+bool g_bX2DownSuppressed = false;
+
 // Default thresholds (inspired by SettingsBase)
 // A negative threshold means the filtering for that button is disabled.
 const int LEFT_THRESHOLD = 50;    // ms, enabled by default
@@ -56,13 +63,21 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
                     if (timeDiff < (DWORD)LEFT_THRESHOLD) {
                         std::cout << "Left button rapid click suppressed. Interval: " << timeDiff << "ms." << std::endl;
                         suppressEvent = true;
-                        g_dwLastLeftButtonUpTime = 0; // Reset to prevent repeated suppression for a fast sequence
+                        g_bLeftDownSuppressed = true; // Mark to suppress the corresponding UP event
                     }
+                }
+                if (!suppressEvent) {
+                    g_dwLastLeftButtonUpTime = 0; // A valid down click consumes the last up time
                 }
                 break;
             case WM_LBUTTONUP:
                 if (LEFT_THRESHOLD >= 0) {
-                    g_dwLastLeftButtonUpTime = currentTime;
+                    if (g_bLeftDownSuppressed) {
+                        suppressEvent = true;
+                        g_bLeftDownSuppressed = false; // Reset the flag
+                    } else {
+                        g_dwLastLeftButtonUpTime = currentTime;
+                    }
                 }
                 break;
 
@@ -73,13 +88,21 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
                     if (timeDiff < (DWORD)RIGHT_THRESHOLD) {
                         std::cout << "Right button rapid click suppressed. Interval: " << timeDiff << "ms." << std::endl;
                         suppressEvent = true;
-                        g_dwLastRightButtonUpTime = 0;
+                        g_bRightDownSuppressed = true;
                     }
+                }
+                if (!suppressEvent) {
+                    g_dwLastRightButtonUpTime = 0;
                 }
                 break;
             case WM_RBUTTONUP:
                 if (RIGHT_THRESHOLD >= 0) {
-                    g_dwLastRightButtonUpTime = currentTime;
+                    if (g_bRightDownSuppressed) {
+                        suppressEvent = true;
+                        g_bRightDownSuppressed = false;
+                    } else {
+                        g_dwLastRightButtonUpTime = currentTime;
+                    }
                 }
                 break;
 
@@ -90,13 +113,21 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
                     if (timeDiff < (DWORD)MIDDLE_THRESHOLD) {
                         std::cout << "Middle button rapid click suppressed. Interval: " << timeDiff << "ms." << std::endl;
                         suppressEvent = true;
-                        g_dwLastMiddleButtonUpTime = 0;
+                        g_bMiddleDownSuppressed = true;
                     }
+                }
+                if (!suppressEvent) {
+                    g_dwLastMiddleButtonUpTime = 0;
                 }
                 break;
             case WM_MBUTTONUP:
                 if (MIDDLE_THRESHOLD >= 0) {
-                    g_dwLastMiddleButtonUpTime = currentTime;
+                    if (g_bMiddleDownSuppressed) {
+                        suppressEvent = true;
+                        g_bMiddleDownSuppressed = false;
+                    } else {
+                        g_dwLastMiddleButtonUpTime = currentTime;
+                    }
                 }
                 break;
 
@@ -108,24 +139,38 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
                     if (timeDiff < (DWORD)X1_THRESHOLD) {
                         std::cout << "X1 button rapid click suppressed. Interval: " << timeDiff << "ms." << std::endl;
                         suppressEvent = true;
-                        g_dwLastX1ButtonUpTime = 0;
+                        g_bX1DownSuppressed = true;
                     }
                 } else if (xButton == XBUTTON2 && X2_THRESHOLD >= 0 && g_dwLastX2ButtonUpTime != 0) {
                     DWORD timeDiff = currentTime - g_dwLastX2ButtonUpTime;
                     if (timeDiff < (DWORD)X2_THRESHOLD) {
                         std::cout << "X2 button rapid click suppressed. Interval: " << timeDiff << "ms." << std::endl;
                         suppressEvent = true;
-                        g_dwLastX2ButtonUpTime = 0;
+                        g_bX2DownSuppressed = true;
                     }
+                }
+                if (!suppressEvent) {
+                    if (xButton == XBUTTON1) g_dwLastX1ButtonUpTime = 0;
+                    else if (xButton == XBUTTON2) g_dwLastX2ButtonUpTime = 0;
                 }
                 break;
             }
             case WM_XBUTTONUP: {
                  WORD xButton = HIWORD(pMouseStruct->mouseData);
                  if (xButton == XBUTTON1 && X1_THRESHOLD >= 0) {
-                    g_dwLastX1ButtonUpTime = currentTime;
+                     if (g_bX1DownSuppressed) {
+                         suppressEvent = true;
+                         g_bX1DownSuppressed = false;
+                     } else {
+                         g_dwLastX1ButtonUpTime = currentTime;
+                     }
                  } else if (xButton == XBUTTON2 && X2_THRESHOLD >= 0) {
-                    g_dwLastX2ButtonUpTime = currentTime;
+                     if (g_bX2DownSuppressed) {
+                         suppressEvent = true;
+                         g_bX2DownSuppressed = false;
+                     } else {
+                         g_dwLastX2ButtonUpTime = currentTime;
+                     }
                  }
                 break;
             }
